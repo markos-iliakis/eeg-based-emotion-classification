@@ -1,0 +1,6 @@
+Configuratron:
+  preload: True
+
+use_gpu: True
+
+datasets: !include downstream_datasets.yml

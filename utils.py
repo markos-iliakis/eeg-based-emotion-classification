@@ -11,6 +11,10 @@ CUSTOM_LOADERS = dict(
     erpbci=LoaderERPBCI,
 )
 
+mapping = dict(
+    person_1=['Data/eeg_recording_1_original.bdf']
+)
+
 EXTRA_METRICS = dict(bac=balanced_accuracy,
                      auroc=auroc)
 
@@ -53,7 +57,7 @@ def get_ds_added_metrics(ds_name, metrics_config):
 def get_ds(name, ds):
     if name in CUSTOM_LOADERS:
         ds.add_custom_raw_loader(CUSTOM_LOADERS[name]())
-    dataset = ds.auto_construct_dataset()
+    dataset = ds.auto_construct_dataset(mapping=mapping)
     dataset.add_transform(To1020())
     return dataset
 

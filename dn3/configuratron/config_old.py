@@ -4,8 +4,9 @@ import tqdm
 import warnings
 import mne.io as loader
 import numpy as np
-
 import parse
+
+# from parse import search
 from fnmatch import fnmatch
 from pathlib import Path
 from collections import OrderedDict
@@ -624,8 +625,8 @@ class DatasetConfig:
                 An instance of :any:`Dataset`, constructed according to mapping.
         """
         if mapping is None:
-            # return self.auto_construct_dataset(self.auto_mapping(), **dsargs)
-            return self.auto_construct_dataset( dict(person1=['Data/eeg_recording_1_original.bdf']), **dsargs)
+            return self.auto_construct_dataset(self.auto_mapping(), **dsargs)
+
         file_types = "Raw" if self._create_raw_recordings else "Epoched"
         if self.preload:
             file_types = "Preloaded " + file_types

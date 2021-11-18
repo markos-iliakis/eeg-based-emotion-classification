@@ -7,9 +7,8 @@ from dn3.trainable.models import Classifier
 from dn3.transforms.batch import BatchTransform
 
 # Swap these two for Ipython/Jupyter
-# import tqdm
+import tqdm
 # import tqdm.notebook as tqdm
-import tqdm.auto as tqdm
 
 import torch
 # ugh the worst, why did they make this protected...
@@ -137,17 +136,13 @@ class BaseProcess(object):
         loader_kwargs.setdefault('pin_memory', self.cuda == 'cuda')
         # Use multiple worker processes when NOT DEBUGGING
         if gettrace() is None:
-            try:
-                # Find number of cpus available (taken from second answer):
-                # https://stackoverflow.com/questions/1006289/how-to-find-out-the-number-of-cpus-using-python
-                m = re.search(r'(?m)^Cpus_allowed:\s*(.*)$',
-                              open('/proc/self/status').read())
-                nw = bin(int(m.group(1).replace(',', ''), 16)).count('1')
-                # Cap the number of workers at 6 (actually 4) to avoid pummeling disks too hard
-                nw = min(num_worker_cap, nw)
-            except FileNotFoundError:
-                # Fallback for when proc/self/status does not exist
-                nw = 2
+            # Find number of cpus available (taken from second answer):
+            # https://stackoverflow.com/questions/1006289/how-to-find-out-the-number-of-cpus-using-python
+            m = re.search(r'(?m)^Cpus_allowed:\s*(.*)$',
+                          open('/proc/self/status').read())
+            nw = bin(int(m.group(1).replace(',', ''), 16)).count('1')
+            # Cap the number of workers at 6 (actually 4) to avoid pummeling disks too hard
+            nw = min(num_worker_cap, nw)
         else:
             # 0 workers means not extra processes are spun up
             nw = 2
@@ -156,7 +151,7 @@ class BaseProcess(object):
         return loader_kwargs
 
     def _get_batch(self, iterator):
-        batch = [x.to(self.device, non_blocking=self.cuda == 'cuda') for x in next(iterator)]
+        batch = [x.to(self.device) for x in next(iterator)]
         xforms = self._batch_transforms if self._training else self._eval_transforms
         for xform in xforms:
             if xform.only_trial_data:
@@ -563,8 +558,6 @@ class BaseProcess(object):
 
                 if iteration % train_log_interval == 0 and pbar.total != iteration:
                     print_training_metrics(epoch, iteration)
-                    train_metrics['epoch'] = epoch
-                    train_metrics['iteration'] = iteration
                     if callable(log_callback):
                         log_callback(metrics)
                     metrics = OrderedDict()
@@ -592,7 +585,6 @@ class BaseProcess(object):
             resume_iteration = 1
 
             if not self.scheduler_after_batch and self.scheduler is not None:
-                tqdm.tqdm.write(f"Step {self.scheduler.get_last_lr()} {self.scheduler.last_epoch}")
                 self.scheduler.step()
 
         if _clear_scheduler_after:
@@ -728,13 +720,10 @@ class StandardClassification(BaseProcess):
                 sampler = balanced_undersampling(dataset) if method.lower() == 'undersample' \
                     else balanced_oversampling(dataset)
                 # Shuffle is implied by the balanced sampling
-                # loader_kwargs['shuffle'] = None
+                loader_kwargs['shuffle'] = None
                 loader_kwargs['sampler'] = sampler
             else:
                 self.loss = create_ldam_loss(dataset)
-
-        if loader_kwargs.get('sampler', None) is not None:
-            loader_kwargs['shuffle'] = None
 
         # Make sure balance method is not passed to DataLoader at this point.
         loader_kwargs.pop('balance_method', None)

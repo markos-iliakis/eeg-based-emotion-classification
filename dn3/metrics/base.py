@@ -1,5 +1,4 @@
 import functools
-import warnings
 import sklearn.metrics as skmetrics
 
 
@@ -29,7 +28,7 @@ def _binarize_two_class(y_p):
     if y_p.shape[-1] == 2:
         return y_p[..., -1]
     elif y_p.shape[-1] > 2:
-        # print("This simple metric implementation doesn't support multi-class targets.")
+        print("This simple metric implementation doesn't support multi-class targets.")
         return 0
 
 
@@ -46,12 +45,7 @@ def dn3_sklearn_metric(func):
         outputs = _get_prediction(outputs)
         y_p = _handle_cropped(outputs.detach().cpu().numpy()).argmax(-1)
         y_t = inputs[-1].detach().cpu().numpy()
-        # Get all sorts of warning during training because batches aren't stable, we ignore these
-        # careful because this could make debugging real problems in val/test impossible
-        # TODO have some sort of warning system for the library to not do this when debugging...
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            return func(y_t, y_p, **kwargs)
+        return func(y_t, y_p, **kwargs)
     return wrapper
 
 
@@ -60,9 +54,7 @@ def dn3_sklearn_binarized(func):
     def wrapper(y_t, y_p, **kwargs):
         y_p = _get_prediction(y_p)
         y_p = _binarize_two_class(y_p)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            return func(y_t[-1].detach().cpu().numpy(), y_p.detach().cpu().numpy(), **kwargs)
+        return func(y_t[-1].detach().cpu().numpy(), y_p.detach().cpu().numpy(), **kwargs)
     return wrapper
 
 

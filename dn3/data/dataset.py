@@ -7,12 +7,11 @@ import numpy as np
 
 from dn3.transforms.preprocessors import Preprocessor
 from dn3.transforms.instance import InstanceTransform, same_channel_sets
-from dn3.utils import rand_split, unfurl, DN3atasetNanFound, DN3atasetException
+from dn3.utils import rand_split, unfurl, DN3atasetNanFound
 
 from abc import ABC
 from collections import OrderedDict
 from collections.abc import Iterable
-from pathlib import Path
 from torch.utils.data import Dataset as TorchDataset
 from torch.utils.data import ConcatDataset, DataLoader
 
@@ -277,7 +276,7 @@ class RawTorchRecording(_Recording):
         self._recording_len = int(tlen * self._recording_sfreq)
         self.stride = stride
         # Implement my own (rather than mne's) in-memory buffer when there are savings
-        self._stride_load = self.decimate > 1 or raw.preload
+        self._stride_load = self.decimate > 1 or (stride > self._recording_len and raw.preload)
         self.max = kwargs.get('max', None)
         self.min = kwargs.get('min', 0)
         bad_spans = list() if bad_spans is None else bad_spans
@@ -298,7 +297,7 @@ class RawTorchRecording(_Recording):
                 self._decimated_sequence_starts.remove(span_start)
 
         # When the stride is greater than the sequence length, preload savings can be found by chopping the
-        # sequence into subsequences of length: sequence length. Also, if decimating, can significantly reduce memory
+        # sequence into subsequences of length sequence length. Also, if decimating, can significantly reduce memory
         # requirements not otherwise addressed with the Raw object.
         if self._stride_load and len(self._decimated_sequence_starts) > 0:
             x = raw.get_data(self.picks)
@@ -358,9 +357,7 @@ class EpochTorchRecording(_Recording):
         epochs
         session_id
         person_id
-        force_label : bool, Optional
-                      Whether to force the labels provided by the epoch instance. By default (False), will convert
-                      output label (for N classes) into codes 0 -> N-1.
+        force_label
         cached
         ch_ind_picks
         event_mapping : dict, Optional
@@ -373,14 +370,12 @@ class EpochTorchRecording(_Recording):
         self.epochs = epochs
         # TODO scrap this cache option, it seems utterly redundant now
         self._cache = [None for _ in range(len(epochs.events))] if cached else None
+        self.force_label = force_label if force_label is None else torch.tensor(force_label)
         if event_mapping is None:
             # mne parses this for us
             event_mapping = epochs.event_id
-        if force_label:
-            self.epoch_codes_to_class_labels = event_mapping
-        else:
-            reverse_mapping = {v: k for k, v in event_mapping.items()}
-            self.epoch_codes_to_class_labels = {v: i for i, v in enumerate(sorted(reverse_mapping.keys()))}
+        reverse_mapping = {v: k for k, v in event_mapping.items()}
+        self.epoch_codes_to_class_labels = {v: i for i, v in enumerate(sorted(reverse_mapping.keys()))}
         skip_epochs = list() if skip_epochs is None else skip_epochs
         self._skip_map = [i for i in range(len(self.epochs.events)) if i not in skip_epochs]
         self._skip_map = dict(zip(range(len(self._skip_map)), self._skip_map))
@@ -403,7 +398,8 @@ class EpochTorchRecording(_Recording):
         else:
             x = self._cache[index]
 
-        y = torch.tensor(self.epoch_codes_to_class_labels[ep.events[0, -1]]).squeeze().long()
+        y = torch.tensor(self.epoch_codes_to_class_labels[ep.events[0, -1]]).squeeze().long() if \
+            self.force_label is None else self.force_label
 
         return self._execute_transforms(x, y)
 
@@ -424,7 +420,7 @@ class EpochTorchRecording(_Recording):
         mapping : dict
                   Keys are the class labels used by this object, values are the original event signifier.
         """
-        return self.epoch_codes_to_class_labels
+        return self.event_labels_to_epoch_codes
 
     def get_targets(self):
         return np.apply_along_axis(lambda x: self.epoch_codes_to_class_labels[x[0]], 1,
@@ -530,12 +526,6 @@ class Thinker(DN3ataset, ConcatDataset):
             self.sessions[sessions.session_id] = sessions
 
         self._reset_dataset()
-
-    def pop_session(self, session_id):
-        assert session_id in self.sessions.keys()
-        sess = self.sessions.pop(session_id)
-        self._reset_dataset()
-        return sess
 
     def __getitem__(self, item, return_id=False):
         x = list(ConcatDataset.__getitem__(self, item))
@@ -683,9 +673,6 @@ class DatasetInfo(object):
         self.__dict__.update(dict(dataset_name=dataset_name, data_max=data_max, data_min=data_min,
                                   excluded_people=excluded_people, targets=targets))
 
-    def __str__(self):
-        return "{} | {} targets | Excluding {}".format(self.dataset_name, self.targets, self.excluded_people)
-
 
 class Dataset(DN3ataset, ConcatDataset):
     """
@@ -823,12 +810,6 @@ class Dataset(DN3ataset, ConcatDataset):
         else:
             self.thinkers[thinker.person_id] = thinker
         self._reset_dataset()
-
-    def pop_thinker(self, person_id):
-        assert person_id in self.get_thinkers()
-        thinker = self.thinkers.pop(person_id)
-        self._reset_dataset()
-        return thinker
 
     def __getitem__(self, item):
         person_id = bisect.bisect_right(self.cumulative_sizes, item)
@@ -1129,122 +1110,23 @@ class Dataset(DN3ataset, ConcatDataset):
                 targets.append(self.thinkers[tid].get_targets())
         if len(targets) == 0:
             return None
-        try:
-            return np.concatenate(targets)
-        # Catch exceptions due to inability to concatenate real targets.
-        except ValueError:
-            return None
+        return np.concatenate(targets)
 
-    def dump_dataset(self, toplevel, compressed=True, apply_transforms=True, summary_file='dataset-dump.npz',
-                     chunksize=100):
+    def dump_dataset(self, toplevel, apply_transforms=True):
         """
-        Dumps the dataset to the directory specified by toplevel, with a single file per index.
+        Dumps the dataset to the file location specified by toplevel, with a single file per session made of all the
+        return tensors (as numpy data) loaded by the dataset.
 
         Parameters
         ----------
         toplevel : str
                  The toplevel location to dump the dataset to. This folder (and path) will be created if it does not
-                 exist.
+                 exist. Each person will have a subdirectory therein, with numpy-formatted files for each session
+                 within that.
         apply_transforms: bool
                  Whether to apply the transforms while preparing the data to be saved.
         """
-        if apply_transforms is False:
-            raise NotImplementedError
-
-        toplevel = Path(toplevel)
-        toplevel.mkdir(exist_ok=True, parents=True)
-
-        thinkers = self.thinkers.copy()
-        inds = 0
-        for k in self.thinkers.keys():
-            thinkers[k] = np.arange(inds, inds+len(thinkers[k]))
-            inds += len(thinkers[k])
-
-        np.savez_compressed(toplevel / summary_file, version='0.0.1', sfreq=self.sfreq, channels=self.channels,
-                            sequence_length=self.sequence_length, chunksize=chunksize, name=self.info.dataset_name,
-                            thinkers=thinkers, real_length=len(self))
-
-        for i in tqdm.trange(round(len(self) / chunksize), desc="Saving", unit='files'):
-            fp = toplevel / str(i)
-            accumulated = list()
-            for j in range(min(chunksize, len(self) - i*chunksize)):
-                accumulated.append(self[i*chunksize + j])
-            accumulated = [torch.stack(z) for z in zip(*accumulated)]
-            if compressed:
-                np.savez_compressed(fp, *[t.numpy() for t in accumulated])
-            else:
-                np.savez(fp, *[t.numpy() for t in accumulated])
+        # TODO
+        raise NotImplementedError
 
 # TODO Convenience functions or classes for leave one and leave multiple datasets out.
-
-
-class DumpedDataset(DN3ataset):
-
-    def __init__(self, toplevel, cache_all=False, summary_file='dataset-dump.npz', info=None, cache_chunk_factor=0.1):
-        super(DumpedDataset, self).__init__()
-        self.toplevel = Path(toplevel)
-        assert self.toplevel.exists()
-        summary_file = self.toplevel / summary_file
-        self.info = info
-        self._summary = np.load(summary_file, allow_pickle=True)
-        self.thinkers = self._summary['thinkers'].flat[0]
-        self._chunksize = self._summary['chunksize']
-        self._num_per_cache = int(cache_chunk_factor * self._chunksize)
-        self._len = self._summary['real_length']
-        assert summary_file.exists()
-        self.filenames = sorted([f for f in self.toplevel.iterdir() if f.name != summary_file.name],
-                                key=lambda f: int(f.stem))
-
-        self.cache = np.empty((self._len, len(self.channels), self.sequence_length)) if cache_all else None
-        self.aux_cache = [None for _ in range(self._len)] if cache_all else None
-
-    def __str__(self):
-        ds_name = self.info.dataset_name if self.info is not None else "Dumped"
-        return ">> {} | {} people | {} trials | {} channels | {} samples/trial | {}Hz | {} transforms | ". \
-               format("ds_name", len(self.thinkers), len(self), len(self.channels),
-                      self.sequence_length, self.sfreq, len(self._transforms))
-
-    def __len__(self):
-        return self._len
-
-    @property
-    def sfreq(self):
-        return self._summary['sfreq']
-
-    @property
-    def channels(self):
-        return self._summary['channels']
-
-    @property
-    def sequence_length(self):
-        return self._summary['sequence_length']
-
-    def get_thinkers(self):
-        return list(self.thinkers.keys())
-
-    def preprocess(self, preprocessor: Preprocessor, apply_transform=True):
-        raise DN3atasetException("Can't preprocess dumped dataset. Load from original files to do this.")
-
-    def __getitem__(self, index):
-        if self.aux_cache is not None and self.aux_cache[index] is not None:
-            print(f"Hit: chunk {index // self._chunksize}, id: {id(self.cache[index // self._chunksize])}")
-            data = [self.cache[index], *self.aux_cache[index]]
-
-        else:
-            idx = index // self._chunksize
-            offset = index % self._chunksize
-
-            data = np.load(self.filenames[idx], allow_pickle=True)
-            if self.aux_cache is not None and self.aux_cache[index] is None:
-                # Put all loaded indexes into the cache
-                # for i in set([offset] + np.random.choice(range(self._chunksize), self._num_per_cache, replace=False)):
-                #     self.cache[int(idx * self._chunksize) + i] = [torch.from_numpy(data[f])[i] for f in data.files]
-                for i in [offset]:
-                    self.cache[index] = torch.from_numpy(data['arr_0'])
-                    self.aux_cache[index] = [torch.from_numpy(data[f])[i] for f in data.files[1:]]
-                data = [self.cache[index], *self.aux_cache[index]]
-            else:
-                data = [torch.from_numpy(data[f])[offset] for f in data.files]
-
-        return self._execute_transforms(*data)
-

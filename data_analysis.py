@@ -25,7 +25,7 @@ def _stamp_to_dt(utc_stamp):
             timedelta(0, stamp[0], stamp[1]))  # day, sec, μs
 
 
-def write_mne_edf(mne_raw, fname, picks=None, tmin=0, tmax=None,
+def write_mne_edf(mne_raw, fname, label, picks=None, tmin=0, tmax=None,
                   overwrite=False):
     """
     Saves the raw content of an MNE.io.Raw and its subclasses to
@@ -67,10 +67,10 @@ def write_mne_edf(mne_raw, fname, picks=None, tmin=0, tmax=None,
 
     print('saving to {}, filetype {}'.format(fname, file_type))
     sfreq = mne_raw.info['sfreq']
-    date = _stamp_to_dt(mne_raw.info['meas_date'])
+    # date = _stamp_to_dt(mne_raw.info['meas_date'])
 
-    if tmin:
-        date += timedelta(seconds=tmin)
+    # if tmin:
+    #     date += timedelta(seconds=tmin)
     # no conversion necessary, as pyedflib can handle datetime.
     # date = date.strftime('%d %b %Y %H:%M:%S')
     first_sample = int(sfreq * tmin)
@@ -96,11 +96,11 @@ def write_mne_edf(mne_raw, fname, picks=None, tmin=0, tmax=None,
         channel_info = []
 
         ch_idx = range(n_channels) if picks is None else picks
-        keys = list(mne_raw._orig_units.keys())
+        # keys = list(mne_raw._orig_units.keys())
         for i in ch_idx:
             try:
                 ch_dict = {'label': mne_raw.ch_names[i],
-                           'dimension': mne_raw._orig_units[keys[i]],
+                           'dimension': 'mv',
                            'sample_rate': mne_raw._raw_extras[0]['n_samps'][i],
                            'physical_min': mne_raw._raw_extras[0]['physical_min'][i],
                            'physical_max': mne_raw._raw_extras[0]['physical_max'][i],
@@ -110,7 +110,7 @@ def write_mne_edf(mne_raw, fname, picks=None, tmin=0, tmax=None,
                            'prefilter': ''}
             except:
                 ch_dict = {'label': mne_raw.ch_names[i],
-                           'dimension': mne_raw._orig_units[keys[i]],
+                           'dimension': 'mv',
                            'sample_rate': sfreq,
                            'physical_min': channels.min(),
                            'physical_max': channels.max(),
@@ -120,16 +120,17 @@ def write_mne_edf(mne_raw, fname, picks=None, tmin=0, tmax=None,
                            'prefilter': ''}
 
             channel_info.append(ch_dict)
-        f.setPatientCode(mne_raw._raw_extras[0]['subject_info'].get('id', '0'))
-        f.setPatientName(mne_raw._raw_extras[0]['subject_info'].get('name', 'noname'))
         f.setTechnician('mne-gist-save-edf-skjerns')
         f.setSignalHeaders(channel_info)
-        f.setStartdatetime(date)
+        for i in range(n_channels):
+            f.setLabel(i, label=label)
+
         f.writeSamples(channels)
+
         for annotation in mne_raw.annotations:
+            description = annotation['description']
             onset = annotation['onset']
             duration = annotation['duration']
-            description = annotation['description']
             f.writeAnnotation(onset, duration, description)
 
     except Exception as e:
@@ -169,51 +170,21 @@ def create_edf():
     signals = read_mat()
 
     # start_stop = [[0:06:13, 0:10:11], [0:00:50, 0:04:36], [0:20:09, 0:23:35], [0:49:57, 0:53:59], [0:10:39, 0:13:43], [1:05:09, 1:08:28], [2:01:20, 2:05:21], [2:55, 6:35], [1:18:56, 1:23:22], [11:31, 15:32], [10:40, 14:38], [2:16:37, 2:20:36], [5:36, 9:36], [35:00, 39:02], [1:48:52, 1:52:18]]
-
     info = mne.create_info(channel_names, 200, ch_types='eeg')
     raw_array = mne.io.RawArray(signals[0][0], info)
 
-    write_mne_edf(raw_array, fname='./Data/SEED/edfs/' + str(1) + '_exp' + str(1) + '.edf')
+    # create annotations https://mne.tools/dev/auto_tutorials/raw/30_annotate_raw.html https://mne.tools/dev/auto_tutorials/intro/20_events_from_raw.html
+    my_annot = mne.Annotations(onset=[0],  # in seconds
+                               duration=[240],  # in seconds, too
+                               description=['emotion'])
+    raw_array.set_annotations(my_annot)
 
+    # stim channel
+    stim_info = mne.create_info(['STI 014'], raw_array.info['sfreq'], ['stim'])
+    stim_raw = mne.io.RawArray(np.zeros((1, len(raw_array.times))), stim_info)
+    raw_array.add_channels([stim_raw], force_update_info=True)
 
-    # TODO get physical min and max from actual data
-    signal_headers = highlevel.make_signal_headers(channel_names, physical_min=-33000, physical_max=33000)
-
-    # TODO check FILETYPE_BDFPLUS
-    for human_i, (gender, signal) in enumerate(zip(genders, signals)):
-        for i, experiment in enumerate(signal):
-            header = highlevel.make_header(patientname=str(human_i) + '_exp' + str(i), gender=gender)
-            highlevel.write_edf('./Data/SEED/edfs/' + str(human_i) + '_exp' + str(i) + '.edf', experiment, signal_headers, header, file_type=pyedflib.FILETYPE_EDFPLUS)
-            f = pyedflib.EdfWriter('./Data/SEED/edfs/' + str(human_i) + '_exp' + str(i) + '.edf', 1, file_type=pyedflib.FILETYPE_EDFPLUS)
-            f.writeAnnotation(0, 240, labels[i], str_format='utf-8')\
-            # f.close()
-            break
-        break
-
-    print('hi')
-    # mne.find_events(bdf_raw)
-    # n = f.signals_in_file
-    # signal_labels = f.getSignalLabels()
-    # sigbufs = np.zeros((n, f.getNSamples()[0]))
-    # for i in np.arange(n):
-    #     sigbufs[i, :] = f.readSignal(i)
-    #
-    # print('finished')
-
-    # d = {}
-    # for i in range(256):
-    #     d[f.getLabel(i)] = f.getLabel(i)[1:]
-    #
-    # f.close()
-    # print("hiiii")
-    #
-    # signals, signal_headers, header = highlevel.read_edf('./Data/eeg_recording_1.bdf')
-    # highlevel.drop_channels('./Data/eeg_recording_1.bdf',
-    #                         to_drop=['Ana1-2', 'Ana3-4', 'Ana5-6', 'Ana7-8', 'Ana9-10', 'Ana11-12', 'Ana13-14',
-    #                                  'Ana15-16', 'Status'])
-    # highlevel.rename_channels('./Data/eeg_recording_1_original.bdf', mapping=d)
-
-    # print('hi')
+    write_mne_edf(raw_array, fname='./Data/SEED/edfs/' + str(1) + '_exp' + str(1) + '.edf', label=labels[0])
 
 
 def read_mat():
@@ -233,10 +204,8 @@ def read_mat():
 def read_edf():
     onlyfiles = [f for f in listdir('./Data/SEED/edfs/') if isfile(join('./Data/SEED/edfs/', f))]
     for file in onlyfiles:
-        # f = pyedflib.EdfReader('./Data/SEED/edfs/' + file, filetype=pyedflib.FILETYPE_EDFPLUS)
-        # x = f.readAnnotations()
         x = mne.io.read_raw_edf('./Data/SEED/edfs/' + file, preload=True)
-        # x = highlevel.read_edf('./Data/SEED/edfs/' + file)
+
     print('hi')
 
 

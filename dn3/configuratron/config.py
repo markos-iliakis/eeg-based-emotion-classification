@@ -625,7 +625,7 @@ class DatasetConfig:
         """
         if mapping is None:
             # return self.auto_construct_dataset(self.auto_mapping(), **dsargs)
-            return self.auto_construct_dataset( dict(person1=['Data/eeg_recording_1_original.bdf']), **dsargs)
+            return self.auto_construct_dataset(dict(person1=['Data/SEED/edfs/1_exp1.edf']), **dsargs)
         file_types = "Raw" if self._create_raw_recordings else "Epoched"
         if self.preload:
             file_types = "Preloaded " + file_types

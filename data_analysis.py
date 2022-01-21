@@ -25,7 +25,7 @@ def _stamp_to_dt(utc_stamp):
             timedelta(0, stamp[0], stamp[1]))  # day, sec, μs
 
 
-def write_mne_edf(mne_raw, fname, label, picks=None, tmin=0, tmax=None,
+def write_mne_edf(mne_raw, fname, ch_names, picks=None, tmin=0, tmax=None,
                   overwrite=False):
     """
     Saves the raw content of an MNE.io.Raw and its subclasses to
@@ -54,7 +54,8 @@ def write_mne_edf(mne_raw, fname, label, picks=None, tmin=0, tmax=None,
     if not issubclass(type(mne_raw), mne.io.BaseRaw):
         raise TypeError('Must be mne.io.Raw type')
     if not overwrite and os.path.exists(fname):
-        raise OSError('File already exists. No overwrite.')
+        # raise OSError('File already exists. No overwrite.')
+        os.remove(fname)
 
     # static settings
     has_annotations = True if len(mne_raw.annotations) > 0 else False
@@ -123,7 +124,7 @@ def write_mne_edf(mne_raw, fname, label, picks=None, tmin=0, tmax=None,
         f.setTechnician('mne-gist-save-edf-skjerns')
         f.setSignalHeaders(channel_info)
         for i in range(n_channels):
-            f.setLabel(i, label=label)
+            f.setLabel(i, label=ch_names[i])
 
         f.writeSamples(channels)
 
@@ -176,15 +177,15 @@ def create_edf():
     # create annotations https://mne.tools/dev/auto_tutorials/raw/30_annotate_raw.html https://mne.tools/dev/auto_tutorials/intro/20_events_from_raw.html
     my_annot = mne.Annotations(onset=[0],  # in seconds
                                duration=[240],  # in seconds, too
-                               description=['emotion'])
+                               description=['Positive'])
     raw_array.set_annotations(my_annot)
 
     # stim channel
-    stim_info = mne.create_info(['STI 014'], raw_array.info['sfreq'], ['stim'])
-    stim_raw = mne.io.RawArray(np.zeros((1, len(raw_array.times))), stim_info)
-    raw_array.add_channels([stim_raw], force_update_info=True)
+    # stim_info = mne.create_info(['STI 014'], raw_array.info['sfreq'], ['stim'])
+    # stim_raw = mne.io.RawArray(np.zeros((1, len(raw_array.times))), stim_info)
+    # raw_array.add_channels([stim_raw], force_update_info=True)
 
-    write_mne_edf(raw_array, fname='./Data/SEED/edfs/' + str(1) + '_exp' + str(1) + '.edf', label=labels[0])
+    write_mne_edf(raw_array, fname='./Data/SEED/edfs/' + str(1) + '_exp' + str(1) + '.edf', ch_names=channel_names)
 
 
 def read_mat():
@@ -195,6 +196,7 @@ def read_mat():
     # Read files
     for file in onlyfiles:
         mat3 = scipy.io.loadmat('./Data/SEED/Preprocessed_EEG/' + file)
+        # mat3 = scipy.io.loadmat('./Data/SEED/Preprocessed_EEG/2_20140419.mat')
         human_eegs.append(list([value for key, value in mat3.items() if 'eeg' in key.lower()]))
         break
 

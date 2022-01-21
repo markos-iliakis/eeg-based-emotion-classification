@@ -76,6 +76,7 @@ def make_epochs_from_raw(raw: mne.io.Raw, tmin, tlen, event_ids=None, baseline=N
         else:
             print('Filter must be provided as a two-element list [low, high]')
 
+    # use_annotations = True
     try:
         if use_annotations:
             events = mne.events_from_annotations(raw, event_id=event_ids, chunk_duration=chunk_duration)[0]

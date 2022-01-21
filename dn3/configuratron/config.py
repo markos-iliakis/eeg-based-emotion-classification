@@ -5,7 +5,7 @@ import warnings
 import mne.io as loader
 import numpy as np
 
-import parse
+from parse import *
 from fnmatch import fnmatch
 from pathlib import Path
 from collections import OrderedDict
@@ -350,7 +350,8 @@ class DatasetConfig:
 
     def _get_session_name(self, f: Path):
         if self.filename_format is not None and fnmatch(self.filename_format, "*{session*}*"):
-            sess_name = parse.search(self.filename_format, f.name)['session']
+            # sess_name = search(self.filename_format, f.name)['session']
+            sess_name = f.name
         else:
             sess_name = f.name
         return sess_name

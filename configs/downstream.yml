@@ -2,7 +2,7 @@ Configuratron:
   use_only:
     - emotion
   preload: True
-  sfreq: 256
+  sfreq: 200
   deep1010:
     return_mask: False
 

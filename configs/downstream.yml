@@ -6,8 +6,8 @@ Configuratron:
   deep1010:
     return_mask: False
 
-encoder_weights: <saved encoder weights>
-context_weights: <saved transformer weights>
+#encoder_weights: Model/
+#context_weights: Model/
 
 datasets: !include configs/downstream_datasets.yml
 

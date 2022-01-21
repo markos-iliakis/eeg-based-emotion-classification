@@ -161,44 +161,52 @@ def create_edf():
                      'PZ', 'P2', 'P4', 'P6', 'P8', 'PO7', 'PO5', 'PO3', 'POZ', 'PO4', 'PO6', 'PO8', 'CB1', 'O1', 'OZ',
                      'O2', 'CB2']
 
-    # gender of each signals[i]
+    # gender of each people_exps[i]
     genders = ['M', 'F', 'F', 'M', 'M', 'M', 'F', 'F', 'M', 'F', 'F', 'M', 'F', 'M', 'F']
 
     # label of each experiment (total 15) and for the entire experiment (aprox 4 minutes / 200 Hz freq) 1 -> positive_feeling / 0 -> neutral_feeling / -1 -> negative_feeling
     labels = ['1', '0', '-1', '-1', '0', '1', '-1', '0', '1', '1', '0', '-1', '0', '1', '-1']
 
-    # signals = number_of_people * number_of_experiments * (channels * time_steps)
-    signals = read_mat()
+    label_names = {
+        '1': "Positive",
+        '0': "Neutral",
+        "-1": "Negative"
+    }
+
+    # people_exps = number_of_people * number_of_experiments * (channels * time_steps)
+    people_exps = read_mat()
 
     # start_stop = [[0:06:13, 0:10:11], [0:00:50, 0:04:36], [0:20:09, 0:23:35], [0:49:57, 0:53:59], [0:10:39, 0:13:43], [1:05:09, 1:08:28], [2:01:20, 2:05:21], [2:55, 6:35], [1:18:56, 1:23:22], [11:31, 15:32], [10:40, 14:38], [2:16:37, 2:20:36], [5:36, 9:36], [35:00, 39:02], [1:48:52, 1:52:18]]
     info = mne.create_info(channel_names, 200, ch_types='eeg')
-    raw_array = mne.io.RawArray(signals[0][0], info)
 
-    # create annotations https://mne.tools/dev/auto_tutorials/raw/30_annotate_raw.html https://mne.tools/dev/auto_tutorials/intro/20_events_from_raw.html
-    my_annot = mne.Annotations(onset=[0],  # in seconds
-                               duration=[240],  # in seconds, too
-                               description=['Positive'])
-    raw_array.set_annotations(my_annot)
+    for person, person_experiments in enumerate(people_exps):
+        for i, experiment in enumerate(person_experiments):
+            raw_array = mne.io.RawArray(experiment, info)
 
-    # stim channel
-    # stim_info = mne.create_info(['STI 014'], raw_array.info['sfreq'], ['stim'])
-    # stim_raw = mne.io.RawArray(np.zeros((1, len(raw_array.times))), stim_info)
-    # raw_array.add_channels([stim_raw], force_update_info=True)
+            # create annotations https://mne.tools/dev/auto_tutorials/raw/30_annotate_raw.html https://mne.tools/dev/auto_tutorials/intro/20_events_from_raw.html
+            my_annot = mne.Annotations(onset=[0],  # in seconds
+                                       duration=[235],  # in seconds, too
+                                       description=[label_names[labels[i]]])
+            raw_array.set_annotations(my_annot)
 
-    write_mne_edf(raw_array, fname='./Data/SEED/edfs/' + str(1) + '_exp' + str(1) + '.edf', ch_names=channel_names)
+            write_mne_edf(raw_array, fname='./Data/SEED/edfs/pers_' + str(person) + '_exp_' + str(i) + '.edf',
+                          ch_names=channel_names)
+            break
 
 
 def read_mat():
     # Get file names
-    onlyfiles = [f for f in listdir('./Data/SEED/Preprocessed_EEG/') if isfile(join('./Data/SEED/Preprocessed_EEG/', f))]
+    onlyfiles = [f for f in listdir('./Data/SEED/Preprocessed_EEG/') if
+                 isfile(join('./Data/SEED/Preprocessed_EEG/', f))]
     human_eegs = list()
 
     # Read files
-    for file in onlyfiles:
+    for i, file in enumerate(onlyfiles):
         mat3 = scipy.io.loadmat('./Data/SEED/Preprocessed_EEG/' + file)
         # mat3 = scipy.io.loadmat('./Data/SEED/Preprocessed_EEG/2_20140419.mat')
         human_eegs.append(list([value for key, value in mat3.items() if 'eeg' in key.lower()]))
-        break
+        if i == 3:
+            break
 
     return human_eegs
 

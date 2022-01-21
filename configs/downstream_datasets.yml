@@ -142,14 +142,21 @@ emotion:
   name: emotion
   filename_format: "emotion_filename_format{subject:1}{session:1}"
   annotation_format: "emotion_annotation_format"
-  toplevel: ./Data/SEED/edfs/1_exp1.edf
+  toplevel: ./Data/SEED/edfs/
   events:
       'Positive': 1
+      'Negative': -1
+      'Neutral': 0
   picks:
       - eeg
+  lr: 0.0005
+  train_params:
+      epochs: 20
+      batch_size: 1
+#      balance_method: undersample
   extensions:
     - .edf
   tmin: 0
-  tlen: 240
+  tlen: 235
   data_max: 32767
   data_min: -32768

@@ -12,14 +12,10 @@ CUSTOM_LOADERS = dict(
     emotion=LoaderEmotion,
 )
 
-# mapping = dict(
-#     person_1=['Data/SEED/edfs/1_exp1.edf']
-# )
-
 mapping = {}
 
-for i in range(4):
-    mapping['person_' + str(i)] = ['Data/SEED/edfs/pers_' + str(i) + '_exp_0.edf']
+for i in range(15):
+    mapping['person_' + str(i)] = ['Data/SEED/edfs/person' + str(i) + '/']
 
 
 EXTRA_METRICS = dict(bac=balanced_accuracy,

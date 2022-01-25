@@ -10,19 +10,9 @@ import mne
 import scipy.io
 import xlrd
 
+
 # Each SEED/preprocessed_EEG/*.mat file contains each person's (total 15) signals from each experiment (total 15)
 # read_mat -> to take the signals and hardcoded channel_names, genders and labels taken from xlsx to create the headers
-
-
-def _stamp_to_dt(utc_stamp):
-    """Convert timestamp to datetime object in Windows-friendly way."""
-    if 'datetime' in str(type(utc_stamp)): return utc_stamp
-    # The min on windows is 86400
-    stamp = [int(s) for s in utc_stamp]
-    if len(stamp) == 1:  # In case there is no microseconds information
-        stamp.append(0)
-    return (datetime.fromtimestamp(0, tz=timezone.utc) +
-            timedelta(0, stamp[0], stamp[1]))  # day, sec, μs
 
 
 def write_mne_edf(mne_raw, fname, ch_names, picks=None, tmin=0, tmax=None,
@@ -51,11 +41,13 @@ def write_mne_edf(mne_raw, fname, ch_names, picks=None, tmin=0, tmax=None,
         If True, the destination file (if it exists) will be overwritten.
         If False (default), an error will be raised if the file exists.
     """
+
     if not issubclass(type(mne_raw), mne.io.BaseRaw):
         raise TypeError('Must be mne.io.Raw type')
     if not overwrite and os.path.exists(fname):
-        # raise OSError('File already exists. No overwrite.')
-        os.remove(fname)
+        print('File already exists. No overwrite. SKIPPING..')
+        return
+        # os.remove(fname)
 
     # static settings
     has_annotations = True if len(mne_raw.annotations) > 0 else False
@@ -68,12 +60,7 @@ def write_mne_edf(mne_raw, fname, ch_names, picks=None, tmin=0, tmax=None,
 
     print('saving to {}, filetype {}'.format(fname, file_type))
     sfreq = mne_raw.info['sfreq']
-    # date = _stamp_to_dt(mne_raw.info['meas_date'])
 
-    # if tmin:
-    #     date += timedelta(seconds=tmin)
-    # no conversion necessary, as pyedflib can handle datetime.
-    # date = date.strftime('%d %b %Y %H:%M:%S')
     first_sample = int(sfreq * tmin)
     last_sample = int(sfreq * tmax) if tmax is not None else None
 
@@ -138,23 +125,25 @@ def write_mne_edf(mne_raw, fname, ch_names, picks=None, tmin=0, tmax=None,
         raise e
     finally:
         f.close()
+        print(fname + 'CREATED')
     return True
 
 
-def read_xlsx():
-    workbook = xlrd.open_workbook("./Data/SEED/channel-order.xlsx", "rb")
-    sheet = workbook.sheet_by_index(0)
-    rows = []
-    for i in range(sheet.nrows):
-        columns = []
-        for j in range(sheet.ncols):
-            columns.append(sheet.cell(i, j).value)
-        rows.append(columns)
+def create_paths(edfs_path, person, sess_i, exp_i):
+    # Create paths
+    person_path = edfs_path + 'person' + str(person) + '/'
+    session_path = person_path + 'session' + str(sess_i) + '/'
+    fname = session_path + 'pers_' + str(person) + '_sess_' + str(sess_i) + '_exp_' + str(exp_i) + '.edf'
 
-    print('hi')
+    if not os.path.exists(person_path):
+        os.mkdir(person_path)
+    if not os.path.exists(session_path):
+        os.mkdir(session_path)
+
+    return fname
 
 
-def create_edf():
+def create_edf(mat_path, edfs_path):
     channel_names = ['FP1', 'FPZ', 'FP2', 'AF3', 'AF4', 'F7', 'F5', 'F3', 'F1', 'FZ', 'F2', 'F4', 'F6', 'F8', 'FT7',
                      'FC5', 'FC3', 'FC1', 'FCZ', 'FC2', 'FC4', 'FC6', 'FT8', 'T7', 'C5', 'C3', 'C1', 'CZ', 'C2', 'C4',
                      'C6', 'T8', 'TP7', 'CP5', 'CP3', 'CP1', 'CPZ', 'CP2', 'CP4', 'CP6', 'TP8', 'P7', 'P5', 'P3', 'P1',
@@ -173,52 +162,68 @@ def create_edf():
         "-1": "Negative"
     }
 
-    # people_exps = number_of_people * number_of_experiments * (channels * time_steps)
-    people_exps = read_mat()
-
     # start_stop = [[0:06:13, 0:10:11], [0:00:50, 0:04:36], [0:20:09, 0:23:35], [0:49:57, 0:53:59], [0:10:39, 0:13:43], [1:05:09, 1:08:28], [2:01:20, 2:05:21], [2:55, 6:35], [1:18:56, 1:23:22], [11:31, 15:32], [10:40, 14:38], [2:16:37, 2:20:36], [5:36, 9:36], [35:00, 39:02], [1:48:52, 1:52:18]]
     info = mne.create_info(channel_names, 200, ch_types='eeg')
 
-    for person, person_experiments in enumerate(people_exps):
-        for i, experiment in enumerate(person_experiments):
-            raw_array = mne.io.RawArray(experiment, info)
+    # read the mat files 3 by 3 for memory efficiency
+    min_eeg = 48000
+    for person in range(1, 16):
+        # person_sessions = 3 * number_of_experiments * (channels * time_steps)
+        person_sessions = read_mat(mat_path, person)
+        for sess_i, session in enumerate(person_sessions):
+            for exp_i, experiment in enumerate(session):
+                raw_array = mne.io.RawArray(experiment, info)
 
-            # create annotations https://mne.tools/dev/auto_tutorials/raw/30_annotate_raw.html https://mne.tools/dev/auto_tutorials/intro/20_events_from_raw.html
-            my_annot = mne.Annotations(onset=[0],  # in seconds
-                                       duration=[235],  # in seconds, too
-                                       description=[label_names[labels[i]]])
-            raw_array.set_annotations(my_annot)
+                # create annotations https://mne.tools/dev/auto_tutorials/raw/30_annotate_raw.html https://mne.tools/dev/auto_tutorials/intro/20_events_from_raw.html
+                my_annot = mne.Annotations(onset=[0],  # in seconds
+                                           duration=[round(raw_array.last_samp/200)],  # in seconds, too
+                                           description=[label_names[labels[exp_i]]])
+                raw_array.set_annotations(my_annot)
 
-            write_mne_edf(raw_array, fname='./Data/SEED/edfs/pers_' + str(person) + '_exp_' + str(i) + '.edf',
-                          ch_names=channel_names)
-            break
+                # calculate the minimum eeg
+                if min_eeg > raw_array.last_samp:
+                    min_eeg = raw_array.last_samp
+
+                fname = create_paths(edfs_path=edfs_path, person=person, sess_i=sess_i, exp_i=exp_i)
+                write_mne_edf(mne_raw=raw_array, fname=fname, ch_names=channel_names, overwrite=False)
+
+    print('Minimum EEG found: ' + str(min_eeg)) #37000
 
 
-def read_mat():
+def read_mat(mat_path, person_n):
     # Get file names
-    onlyfiles = [f for f in listdir('./Data/SEED/Preprocessed_EEG/') if
-                 isfile(join('./Data/SEED/Preprocessed_EEG/', f))]
+    onlyfiles = [f for f in listdir('./Data/SEED/Preprocessed_EEG/') if isfile(join('./Data/SEED/Preprocessed_EEG/', f))]
     human_eegs = list()
 
     # Read files
     for i, file in enumerate(onlyfiles):
-        mat3 = scipy.io.loadmat('./Data/SEED/Preprocessed_EEG/' + file)
-        # mat3 = scipy.io.loadmat('./Data/SEED/Preprocessed_EEG/2_20140419.mat')
-        human_eegs.append(list([value for key, value in mat3.items() if 'eeg' in key.lower()]))
-        if i == 3:
-            break
+        if file.startswith(str(person_n) + '_'):
+            eeg = scipy.io.loadmat('./Data/SEED/Preprocessed_EEG/' + file)
+            human_eegs.append(list([value for key, value in eeg.items() if 'eeg' in key.lower()]))
+            print('Reading ./Data/SEED/Preprocessed_EEG/' + file)
 
     return human_eegs
 
 
-def read_edf():
-    onlyfiles = [f for f in listdir('./Data/SEED/edfs/') if isfile(join('./Data/SEED/edfs/', f))]
-    for file in onlyfiles:
-        x = mne.io.read_raw_edf('./Data/SEED/edfs/' + file, preload=True)
+def read_edf(edfs_path, failed_edfs_path):
+    listOfFiles = list()
+    for (dirpath, dirnames, filenames) in os.walk(edfs_path):
+        listOfFiles += [os.path.join(dirpath, file) for file in filenames]
 
-    print('hi')
+
+    # onlyfiles = [f for f in listdir('./Data/SEED/edfs/') if isfile(join('./Data/SEED/edfs/', f))]
+    for file in listOfFiles:
+        try:
+            x = mne.io.read_raw_edf(file, preload=True)
+
+        except Exception:
+            os.rename(file,  failed_edfs_path + os.path.basename(file))
+            print('Error in file: ' + file + ' . MOVED to ' + failed_edfs_path)
 
 
 if __name__ == '__main__':
-    create_edf()
-    read_edf()
+    mat_path = './Data/SEED/Preprocessed_EEG/'
+    edfs_path = './Data/SEED/edfs/'
+    failed_edfs_path = './Data/SEED/failed_edfs/'
+    # create_edf(mat_path=mat_path, edfs_path=edfs_path)
+    read_edf(edfs_path=edfs_path, failed_edfs_path=failed_edfs_path)

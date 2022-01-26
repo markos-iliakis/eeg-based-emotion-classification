@@ -1,3 +1,5 @@
+import os
+
 import torch
 import yaml
 
@@ -14,8 +16,11 @@ CUSTOM_LOADERS = dict(
 
 mapping = {}
 
-for i in range(15):
-    mapping['person_' + str(i)] = ['Data/SEED/edfs/person' + str(i) + '/']
+for i in range(1, 16):
+    listOfFiles = list()
+    for (dirpath, dirnames, filenames) in os.walk('Data/SEED/edfs/person' + str(i) + '/'):
+        listOfFiles += [os.path.join(dirpath, file) for file in filenames]
+    mapping['person_' + str(i)] = listOfFiles
 
 
 EXTRA_METRICS = dict(bac=balanced_accuracy,

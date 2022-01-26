@@ -140,7 +140,7 @@
 
 emotion:
   name: emotion
-  filename_format: "emotion_filename_format{subject:1}{session:1}"
+  filename_format: "emotion_filename_format{subject:15}{session:1}"
   annotation_format: "emotion_annotation_format"
   toplevel: ./Data/SEED/edfs/
   events:

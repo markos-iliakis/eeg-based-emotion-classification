@@ -132,13 +132,13 @@ def write_mne_edf(mne_raw, fname, ch_names, picks=None, tmin=0, tmax=None,
 def create_paths(edfs_path, person, sess_i, exp_i):
     # Create paths
     person_path = edfs_path + 'person' + str(person) + '/'
-    session_path = person_path + 'session' + str(sess_i) + '/'
-    fname = session_path + 'pers_' + str(person) + '_sess_' + str(sess_i) + '_exp_' + str(exp_i) + '.edf'
+    # session_path = person_path + 'session' + str(sess_i) + '/'
+    fname = person_path + 'pers_' + str(person) + '_sess_' + str(sess_i) + '_exp_' + str(exp_i) + '.edf'
 
     if not os.path.exists(person_path):
         os.mkdir(person_path)
-    if not os.path.exists(session_path):
-        os.mkdir(session_path)
+    # if not os.path.exists(session_path):
+    #     os.mkdir(session_path)
 
     return fname
 
@@ -192,15 +192,15 @@ def create_edf(mat_path, edfs_path):
 
 def read_mat(mat_path, person_n):
     # Get file names
-    onlyfiles = [f for f in listdir('./Data/SEED/Preprocessed_EEG/') if isfile(join('./Data/SEED/Preprocessed_EEG/', f))]
+    onlyfiles = [f for f in listdir(mat_path) if isfile(join(mat_path, f))]
     human_eegs = list()
 
     # Read files
     for i, file in enumerate(onlyfiles):
         if file.startswith(str(person_n) + '_'):
-            eeg = scipy.io.loadmat('./Data/SEED/Preprocessed_EEG/' + file)
+            eeg = scipy.io.loadmat(mat_path + file)
             human_eegs.append(list([value for key, value in eeg.items() if 'eeg' in key.lower()]))
-            print('Reading ./Data/SEED/Preprocessed_EEG/' + file)
+            print('Reading ' + mat_path + file)
 
     return human_eegs
 
@@ -226,4 +226,5 @@ if __name__ == '__main__':
     edfs_path = './Data/SEED/edfs/'
     failed_edfs_path = './Data/SEED/failed_edfs/'
     # create_edf(mat_path=mat_path, edfs_path=edfs_path)
-    read_edf(edfs_path=edfs_path, failed_edfs_path=failed_edfs_path)
+    # read_edf(edfs_path=edfs_path, failed_edfs_path=failed_edfs_path)
+    read_mat('./Data/SEED/ExtractedFeatures/', 2)

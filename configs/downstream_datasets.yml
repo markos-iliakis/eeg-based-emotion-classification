@@ -157,6 +157,6 @@ emotion:
   extensions:
     - .edf
   tmin: 0
-  tlen: 235
+  tlen: 185
   data_max: 32767
   data_min: -32768

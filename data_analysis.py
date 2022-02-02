@@ -203,7 +203,7 @@ def read_mat(mat_path, person_n, feature=None):
             human_eegs.append(list([value for key, value in eeg.items() if 'eeg' in key.lower()]))
             if feature:
                 eeg_features.append(list([value for key, value in eeg.items() if key.startswith(feature)]))
-            print('Reading ' + mat_path + file)
+            # print('Reading ' + mat_path + file)
 
     return human_eegs, eeg_features
 

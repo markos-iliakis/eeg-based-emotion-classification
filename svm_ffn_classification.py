@@ -2,10 +2,14 @@ import logging
 import os
 import pprint
 
+import torch.nn
 from torch import nn
+from torch.nn import CrossEntropyLoss
+from torch.utils.data import Dataset, DataLoader
 from tslearn import svm
 from data_analysis import read_mat
 from sklearn import metrics
+import torch.optim as optim
 
 
 def get_data(starting_per, ending_per, feature, band):
@@ -146,7 +150,23 @@ class MultiLayerFeedForwardNN(nn.Module):
         return output
 
 
+class TimeseriesDataset(Dataset):
+    def __init__(self, x, y, seq_len=1):
+        self.X = x
+        self.y = y
+        self.seq_len = seq_len
+
+    def __len__(self):
+        return self.X.__len__() - (self.seq_len-1)
+
+    def __getitem__(self, index):
+        return self.X[index:index + self.seq_len], self.y[index + self.seq_len - 1]
+
+
 def ffn_classification():
+
+    epochs = 10
+
     # keep logs
     ffn_logs_path = './ffn_logs/'
     if not os.path.exists(ffn_logs_path):
@@ -168,10 +188,25 @@ def ffn_classification():
     best_results_info = ''
     band = 'gamma'
     for feature in features:
-        train_x, train_y = get_data(starting_per=1, ending_per=14, feature=feature, band=bands[band])
-        test_x, test_y = get_data(starting_per=14, ending_per=16, feature=feature, band=bands[band])
+        train_x, train_y = get_data(starting_per=1, ending_per=2, feature=feature, band=bands[band])
+        test_x, test_y = get_data(starting_per=2, ending_per=3, feature=feature, band=bands[band])
 
-        ffn = MultiLayerFeedForwardNN(input_dim=, output_dim=3, num_hidden_layers=10, dropout_rate=0.5, hidden_dim=512)
+        train_dataset = TimeseriesDataset(train_x, train_y, seq_len=185)
+        train_loader = DataLoader(train_dataset, batch_size=5, shuffle=True)
+
+        ffn = MultiLayerFeedForwardNN(input_dim=2, output_dim=3, num_hidden_layers=10, dropout_rate=0.5, hidden_dim=512)
+        optimizer = optim.Adam(ffn.parameters(), lr=0.01)
+
+        for epoch in range(epochs):
+
+            optimizer.zero_grad()
+            for i, minibatch in enumerate(train_loader):
+
+                output = ffn(minibatch)
+                loss = CrossEntropyLoss(output, train_y)
+                loss.backward()
+                optimizer.step()
+
 
 
 

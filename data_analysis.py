@@ -169,7 +169,7 @@ def create_edf(mat_path, edfs_path):
     min_eeg = 48000
     for person in range(1, 16):
         # person_sessions = 3 * number_of_experiments * (channels * time_steps)
-        person_sessions = read_mat(mat_path, person)
+        person_sessions, eeg_feats = read_mat(mat_path, person)
         for sess_i, session in enumerate(person_sessions):
             for exp_i, experiment in enumerate(session):
                 raw_array = mne.io.RawArray(experiment, info)
@@ -190,19 +190,22 @@ def create_edf(mat_path, edfs_path):
     print('Minimum EEG found: ' + str(min_eeg)) #37000
 
 
-def read_mat(mat_path, person_n):
+def read_mat(mat_path, person_n, feature=None):
     # Get file names
     onlyfiles = [f for f in listdir(mat_path) if isfile(join(mat_path, f))]
     human_eegs = list()
+    eeg_features = list()
 
     # Read files
     for i, file in enumerate(onlyfiles):
         if file.startswith(str(person_n) + '_'):
             eeg = scipy.io.loadmat(mat_path + file)
             human_eegs.append(list([value for key, value in eeg.items() if 'eeg' in key.lower()]))
+            if feature:
+                eeg_features.append(list([value for key, value in eeg.items() if key.startswith(feature)]))
             print('Reading ' + mat_path + file)
 
-    return human_eegs
+    return human_eegs, eeg_features
 
 
 def read_edf(edfs_path, failed_edfs_path):

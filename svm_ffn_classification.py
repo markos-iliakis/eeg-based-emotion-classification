@@ -10,6 +10,7 @@ from tslearn import svm
 from data_analysis import read_mat
 from sklearn import metrics
 import torch.optim as optim
+import numpy as np
 
 
 def get_data(starting_per, ending_per, feature, band):
@@ -150,22 +151,21 @@ class MultiLayerFeedForwardNN(nn.Module):
         return output
 
 
-class TimeseriesDataset(Dataset):
-    def __init__(self, x, y, seq_len=1):
-        self.X = x
-        self.y = y
-        self.seq_len = seq_len
+class EEGDataset(Dataset):
+    def __init__(self, x):
+        self.X = np.array(x)
 
     def __len__(self):
-        return self.X.__len__() - (self.seq_len-1)
+        return len(self.X)
 
     def __getitem__(self, index):
-        return self.X[index:index + self.seq_len], self.y[index + self.seq_len - 1]
+        return torch.from_numpy(self.X[index])
 
 
 def ffn_classification():
 
     epochs = 10
+    batch_size = 5
 
     # keep logs
     ffn_logs_path = './ffn_logs/'
@@ -191,18 +191,18 @@ def ffn_classification():
         train_x, train_y = get_data(starting_per=1, ending_per=2, feature=feature, band=bands[band])
         test_x, test_y = get_data(starting_per=2, ending_per=3, feature=feature, band=bands[band])
 
-        train_dataset = TimeseriesDataset(train_x, train_y, seq_len=185)
-        train_loader = DataLoader(train_dataset, batch_size=5, shuffle=True)
+        train_dataset = EEGDataset(train_x)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-        ffn = MultiLayerFeedForwardNN(input_dim=2, output_dim=3, num_hidden_layers=10, dropout_rate=0.5, hidden_dim=512)
+        ffn = MultiLayerFeedForwardNN(input_dim=, output_dim=3, num_hidden_layers=10, dropout_rate=0.5, hidden_dim=512)
         optimizer = optim.Adam(ffn.parameters(), lr=0.01)
 
         for epoch in range(epochs):
 
             optimizer.zero_grad()
-            for i, minibatch in enumerate(train_loader):
+            for i, batch in enumerate(train_loader):
 
-                output = ffn(minibatch)
+                output = ffn(batch)
                 loss = CrossEntropyLoss(output, train_y)
                 loss.backward()
                 optimizer.step()

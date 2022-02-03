@@ -166,6 +166,9 @@ def ffn_classification():
 
     epochs = 10
     batch_size = 5
+    nn_layers = 10
+    dropout = 0.5
+    hidden_dim = 512
 
     # keep logs
     ffn_logs_path = './ffn_logs/'
@@ -194,7 +197,7 @@ def ffn_classification():
         train_dataset = EEGDataset(train_x)
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-        ffn = MultiLayerFeedForwardNN(input_dim=, output_dim=3, num_hidden_layers=10, dropout_rate=0.5, hidden_dim=512)
+        ffn = MultiLayerFeedForwardNN(input_dim=, output_dim=3, num_hidden_layers=nn_layers, dropout_rate=dropout, hidden_dim=hidden_dim)
         optimizer = optim.Adam(ffn.parameters(), lr=0.01)
 
         for epoch in range(epochs):

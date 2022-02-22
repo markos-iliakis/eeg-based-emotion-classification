@@ -1,9 +1,11 @@
 import logging
 import os
 import pprint
+from statistics import mean
 
 import torch.nn
-from torch import nn
+from matplotlib import pyplot as plt
+from torch import nn, IntTensor
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import Dataset, DataLoader
 from tslearn import svm
@@ -37,8 +39,8 @@ def svm_classification():
         os.mkdir(svm_logs_path)
 
     # Available features: de / psd / dasm / rasm / asm / dcau | Available smoothing: movingAve / LDS
-    features = ['de', 'psd', 'dasm', 'rasm', 'asm', 'dcau']
-    smoothing = ['movingAve', 'LDS']
+    features = ['asm']  # 'de', 'psd', 'dasm', , 'asm', 'dcau'
+    smoothing = ['movingAve']  # , 'LDS'
     features = [f + '_' + s for f in features for s in smoothing]
 
     # Available bands: delta (1-3Hz)/ theta (4-7Hz)/ alpha (8-13Hz)/ beta (14-30Hz)/ gamma(31-50Hz)
@@ -49,7 +51,7 @@ def svm_classification():
              'gamma': 4}
 
     # Available kernels:
-    kernels = ['rbf', 'gak', 'linear', 'sigmoid']
+    kernels = ['rbf']  # , 'gak', 'linear', 'sigmoid'
 
     best_results = {}
     best_results_info = ''
@@ -74,8 +76,7 @@ def svm_classification():
                 best_results_info = 'feature: ' + feature + ' band: ' + band + ' kernel: ' + kernel + ' \n' + pprint.pformat(
                     results)
 
-            logging.info(
-                'feature: ' + feature + ' band: ' + band + ' kernel: ' + kernel + ' \n' + pprint.pformat(results))
+            print('feature: ' + feature + ' band: ' + band + ' kernel: ' + kernel + ' \n' + pprint.pformat(results))
 
     print(best_results_info)
     return best_results
@@ -112,10 +113,10 @@ class SingleFeedForwardNN(nn.Module):
             # dropout
             output = self.dropout(output)
             # skip connection
-            if not self.first_layer:
-                output = output + input
+            # if not self.first_layer:
+            #     output = output + input
             # layer normalization
-            output = self.layernorm(output)
+            # output = self.layernorm(output)
         else:
             output = self.softmax(output)
 
@@ -169,12 +170,12 @@ class EEGDataset(Dataset):
 
 
 def ffn_classification():
-    epochs = 200
-    batch_size = 5
-    nn_layers = 0
-    dropout = 0.5
-    hidden_dim = 512
-    lr = 0.1
+    epochs = 30
+    batch_size = 32
+    nn_layers = 64
+    dropout = 0.3
+    hidden_dim = 256
+    lr = 0.001
 
     # keep logs
     ffn_logs_path = './ffn_logs/'
@@ -183,9 +184,8 @@ def ffn_classification():
 
     # Available features: de / psd / dasm / rasm / asm / dcau | Available smoothing: movingAve / LDS
     # features = ['de', 'psd', 'dasm', 'rasm', 'asm', 'dcau']
-    features = ['de', 'asm', 'dcau']
-    # smoothing = ['movingAve', 'LDS']
-    smoothing = ['LDS']
+    features = ['asm']  # 'de', 'psd', 'dasm', , 'asm', 'dcau'
+    smoothing = ['movingAve']  # , 'LDS'
     features = [f + '_' + s for f in features for s in smoothing]
 
     # Available bands: delta (1-3Hz)/ theta (4-7Hz)/ alpha (8-13Hz)/ beta (14-30Hz)/ gamma(31-50Hz)
@@ -218,29 +218,42 @@ def ffn_classification():
 
         optimizer = optim.Adam(ffn.parameters(), lr=lr)
 
+        mean_losses = []
+        mean_test_losses = []
         for epoch in range(epochs):
             print("Epoch ", epoch, "..................")
             optimizer.zero_grad()
+
+            losses = []
+
             # Train
             for train_batch, train_batch_labels in train_loader:
                 train_batch = train_batch.view(-1, channels*sec).requires_grad_()
                 output = ffn(train_batch)
                 loss = criterion(output, train_batch_labels)
+                losses.append(IntTensor.item(loss))
                 loss.backward()
                 optimizer.step()
 
+            mean_losses.append(mean(losses))
+
             # Calc metrics for test
+            test_losses = []
             test_pred = []
             test_labels = []
             for test_batch, test_batch_labels in test_loader:
 
                 test_batch = test_batch.view(-1, channels*sec).requires_grad_()
                 output = ffn(test_batch)
+                test_loss = criterion(output, test_batch_labels)
+                test_losses.append(IntTensor.item(test_loss))
 
                 _, predicted = torch.max(output, 1)
 
                 test_labels.extend(test_batch_labels.tolist())
                 test_pred.extend(predicted.tolist())
+
+            mean_test_losses.append(mean(test_losses))
 
             results = metrics.classification_report(test_labels, test_pred, output_dict=True, zero_division=0)
 
@@ -252,13 +265,21 @@ def ffn_classification():
                 best_results_info = 'feature: ' + feature + ' band: ' + band + ' epoch: ' + str(epoch) + ' lr: ' + str(lr) + ' nn_layers: ' + str(nn_layers) +  ' \n' + pprint.pformat(
                     results)
 
-            pprint.pformat(results)
-            logging.info(
-                'feature: ' + feature + ' band: ' + band + ' epoch: ' + str(epoch) + ' lr: ' + str(lr) + ' nn_layers: ' + str(nn_layers) + ' \n' + pprint.pformat(results))
+            print('feature: ' + feature + ' band: ' + band + ' epoch: ' + str(epoch) + ' lr: ' + str(lr) + ' nn_layers: ' + str(nn_layers) + ' \n' + pprint.pformat(results))
 
-            if epoch % 10 == 0:
-                print(best_results_info)
+            if epoch % 1 == 0:
+                plot_loss_epochs(mean_losses, mean_test_losses, epoch)
     return best_results
+
+
+def plot_loss_epochs(train_loss, val_loss, epochs):
+    plt.plot(range(1, epochs+2), train_loss, 'g', label='Training loss')
+    plt.plot(range(1, epochs+2), val_loss, 'b', label='validation loss')
+    plt.title('Training and Validation loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.show()
 
 
 if __name__ == '__main__':

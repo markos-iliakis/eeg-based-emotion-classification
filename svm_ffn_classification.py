@@ -37,7 +37,7 @@ def svm_classification():
         os.mkdir(svm_logs_path)
 
     # Available features: de / psd / dasm / rasm / asm / dcau | Available smoothing: movingAve / LDS
-    features = ['de', 'psd', 'dasm', 'rasm', 'asm', 'dcau']
+    features = ['rasm']  # 'de', 'psd', 'dasm', 'asm', 'dcau'
     smoothing = ['movingAve', 'LDS']
     features = [f + '_' + s for f in features for s in smoothing]
 
@@ -49,7 +49,7 @@ def svm_classification():
              'gamma': 4}
 
     # Available kernels:
-    kernels = ['rbf', 'gak', 'linear', 'sigmoid']
+    kernels = ['rbf']  # , 'gak', 'linear', 'sigmoid'
 
     best_results = {}
     best_results_info = ''
@@ -74,10 +74,9 @@ def svm_classification():
                 best_results_info = 'feature: ' + feature + ' band: ' + band + ' kernel: ' + kernel + ' \n' + pprint.pformat(
                     results)
 
-            logging.info(
-                'feature: ' + feature + ' band: ' + band + ' kernel: ' + kernel + ' \n' + pprint.pformat(results))
+            print('feature: ' + feature + ' band: ' + band + ' kernel: ' + kernel + ' \n' + pprint.pformat(results))
 
-    print(best_results_info)
+    # print(best_results_info)
     return best_results
 
 

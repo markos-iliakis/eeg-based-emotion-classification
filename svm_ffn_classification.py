@@ -37,10 +37,8 @@ def svm_classification():
         os.mkdir(svm_logs_path)
 
     # Available features: de / psd / dasm / rasm / asm / dcau | Available smoothing: movingAve / LDS
-    # features = ['de', 'asm', 'dcau']  #  'psd', 'dasm', 'rasm',
-    features = ['rasm']
-    smoothing = ['movingAve']  # , 'LDS'
-    # smoothing = ['LDS']
+    features = ['de', 'psd', 'dasm', 'rasm', 'asm', 'dcau']
+    smoothing = ['movingAve', 'LDS']
     features = [f + '_' + s for f in features for s in smoothing]
 
     # Available bands: delta (1-3Hz)/ theta (4-7Hz)/ alpha (8-13Hz)/ beta (14-30Hz)/ gamma(31-50Hz)
@@ -51,7 +49,7 @@ def svm_classification():
              'gamma': 4}
 
     # Available kernels:
-    kernels = ['rbf']  # 'rbf', 'gak', 'linear', 'sigmoid'
+    kernels = ['rbf', 'gak', 'linear', 'sigmoid']
 
     best_results = {}
     best_results_info = ''
@@ -76,9 +74,10 @@ def svm_classification():
                 best_results_info = 'feature: ' + feature + ' band: ' + band + ' kernel: ' + kernel + ' \n' + pprint.pformat(
                     results)
 
-            print('feature: ' + feature + ' band: ' + band + ' kernel: ' + kernel + ' \n' + pprint.pformat(results))
+            logging.info(
+                'feature: ' + feature + ' band: ' + band + ' kernel: ' + kernel + ' \n' + pprint.pformat(results))
 
-    # print(best_results_info)
+    print(best_results_info)
     return best_results
 
 
@@ -198,20 +197,23 @@ def ffn_classification():
         train_dataset = EEGDataset(train_x)
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-        # ffn = MultiLayerFeedForwardNN(input_dim=, output_dim=3, num_hidden_layers=nn_layers, dropout_rate=dropout, hidden_dim=hidden_dim)
-        # optimizer = optim.Adam(ffn.parameters(), lr=0.01)
+        ffn = MultiLayerFeedForwardNN(input_dim=, output_dim=3, num_hidden_layers=nn_layers, dropout_rate=dropout, hidden_dim=hidden_dim)
+        optimizer = optim.Adam(ffn.parameters(), lr=0.01)
 
-        # for epoch in range(epochs):
-        #
-        #     optimizer.zero_grad()
-        #     for i, batch in enumerate(train_loader):
-        #
-        #         output = ffn(batch)
-        #         loss = CrossEntropyLoss(output, train_y)
-        #         loss.backward()
-        #         optimizer.step()
+        for epoch in range(epochs):
+
+            optimizer.zero_grad()
+            for i, batch in enumerate(train_loader):
+
+                output = ffn(batch)
+                loss = CrossEntropyLoss(output, train_y)
+                loss.backward()
+                optimizer.step()
+
+
+
 
 
 if __name__ == '__main__':
-    svm_classification()
-    # ffn_classification()
+    # svm_classification()
+    ffn_classification()

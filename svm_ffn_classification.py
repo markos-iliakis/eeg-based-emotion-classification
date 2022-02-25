@@ -3,10 +3,12 @@ import os
 import pprint
 from statistics import mean
 
+import pandas
 import torch.nn
 from matplotlib import pyplot as plt
 from torch import nn, IntTensor
 from torch.nn import CrossEntropyLoss
+from torch.optim import SGD
 from torch.utils.data import Dataset, DataLoader
 from tslearn import svm
 from data_analysis import read_mat
@@ -39,8 +41,8 @@ def svm_classification():
         os.mkdir(svm_logs_path)
 
     # Available features: de / psd / dasm / rasm / asm / dcau | Available smoothing: movingAve / LDS
-    features = ['asm']  # 'de', 'psd', 'dasm', , 'asm', 'dcau'
-    smoothing = ['movingAve']  # , 'LDS'
+    features = ['de']  # 'de', 'psd', 'dasm', 'rasm', 'asm', 'dcau'
+    smoothing = ['movingAve']  # 'movingAve', 'LDS'
     features = [f + '_' + s for f in features for s in smoothing]
 
     # Available bands: delta (1-3Hz)/ theta (4-7Hz)/ alpha (8-13Hz)/ beta (14-30Hz)/ gamma(31-50Hz)
@@ -51,32 +53,37 @@ def svm_classification():
              'gamma': 4}
 
     # Available kernels:
-    kernels = ['rbf']  # , 'gak', 'linear', 'sigmoid'
+    kernels = ['linear']  # , 'gak', 'linear', 'sigmoid'
 
     best_results = {}
     best_results_info = ''
-    band = 'gamma'
-    for feature in features:
-        for kernel in kernels:
+    for band in bands.keys():
 
-            train_x, train_y = get_data(starting_per=1, ending_per=8, feature=feature, band=bands[band])
-            test_x, test_y = get_data(starting_per=8, ending_per=10, feature=feature, band=bands[band])
+        band = 'beta'
+        for feature in features:
 
-            clf = svm.TimeSeriesSVC(kernel=kernel)
-            clf.fit(train_x, train_y)
-            pred_y = clf.predict(test_x)
+            train_x, train_y = get_data(starting_per=1, ending_per=14, feature=feature, band=bands[band])
+            test_x, test_y = get_data(starting_per=14, ending_per=16, feature=feature, band=bands[band])
 
-            results = metrics.classification_report(test_y, pred_y, output_dict=True)
+            for kernel in kernels:
 
-            if not best_results:
-                best_results = results
+                clf = svm.TimeSeriesSVC(kernel=kernel)
+                clf.fit(train_x, train_y)
+                pred_y = clf.predict(test_x)
 
-            if results['macro avg']['f1-score'] >= best_results['macro avg']['f1-score']:
-                best_results = results
-                best_results_info = 'feature: ' + feature + ' band: ' + band + ' kernel: ' + kernel + ' \n' + pprint.pformat(
-                    results)
+                results = metrics.classification_report(test_y, pred_y, output_dict=True)
+                df = pandas.DataFrame(results).transpose()
+                df.to_excel('svm_logs/best_svm_classification_report.xlsx')
+                if not best_results:
+                    best_results = results
 
-            print('feature: ' + feature + ' band: ' + band + ' kernel: ' + kernel + ' \n' + pprint.pformat(results))
+                if results['macro avg']['f1-score'] >= best_results['macro avg']['f1-score']:
+                    best_results = results
+                    best_results_info = 'feature: ' + feature + ' band: ' + band + ' kernel: ' + kernel + ' \n' + pprint.pformat(
+                        results)
+
+                print('feature: ' + feature + ' band: ' + band + ' kernel: ' + kernel + ' \n' + pprint.pformat(results))
+        break
 
     print(best_results_info)
     return best_results
@@ -103,9 +110,9 @@ class SingleFeedForwardNN(nn.Module):
         self.linear = nn.Linear(self.input_dim, self.output_dim)
         nn.init.xavier_uniform_(self.linear.weight)
 
-    def forward(self, input):
+    def forward(self, x):
         # Linear layer
-        output = self.linear(input)
+        output = self.linear(x)
 
         if not self.last_layer:
             # non-linearity
@@ -124,7 +131,7 @@ class SingleFeedForwardNN(nn.Module):
 
 
 class MultiLayerFeedForwardNN(nn.Module):
-    def __init__(self, input_dim, output_dim, num_hidden_layers=0, dropout_rate=None, hidden_dim=-1):
+    def __init__(self, input_dim, output_dim, num_hidden_layers=0, dropout_rate=None, hidden_dim=-1, device='cpu'):
         super(MultiLayerFeedForwardNN, self).__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
@@ -149,12 +156,11 @@ class MultiLayerFeedForwardNN(nn.Module):
                                                dropout_rate=self.dropout_rate,
                                                last_layer=True))
 
-    def forward(self, input):
-        output = input
+    def forward(self, x):
         for i in range(len(self.layers)):
-            output = self.layers[i](output)
+            x = self.layers[i](x)
 
-        return output
+        return x
 
 
 class EEGDataset(Dataset):
@@ -170,12 +176,14 @@ class EEGDataset(Dataset):
 
 
 def ffn_classification():
-    epochs = 30
+    epochs = 100
     batch_size = 32
-    nn_layers = 64
-    dropout = 0.3
-    hidden_dim = 256
-    lr = 0.001
+    nn_layers = 8
+    dropout = 0
+    hidden_dim = 4
+    lr = 0.01
+    device = 'cuda'
+    steps = 5
 
     # keep logs
     ffn_logs_path = './ffn_logs/'
@@ -183,9 +191,8 @@ def ffn_classification():
         os.mkdir(ffn_logs_path)
 
     # Available features: de / psd / dasm / rasm / asm / dcau | Available smoothing: movingAve / LDS
-    # features = ['de', 'psd', 'dasm', 'rasm', 'asm', 'dcau']
-    features = ['asm']  # 'de', 'psd', 'dasm', , 'asm', 'dcau'
-    smoothing = ['movingAve']  # , 'LDS'
+    features = ['de']  # 'de', 'psd', 'dasm', 'rasm', 'asm', 'dcau'
+    smoothing = ['movingAve']  # 'movingAve', 'LDS'
     features = [f + '_' + s for f in features for s in smoothing]
 
     # Available bands: delta (1-3Hz)/ theta (4-7Hz)/ alpha (8-13Hz)/ beta (14-30Hz)/ gamma(31-50Hz)
@@ -200,35 +207,40 @@ def ffn_classification():
     band = 'gamma'
     for feature in features:
         print("Feature ", feature, "..............................................")
-        train_x, train_y = get_data(starting_per=1, ending_per=11, feature=feature, band=bands[band])
-        test_x, test_y = get_data(starting_per=11, ending_per=15, feature=feature, band=bands[band])
+        train_x, train_y = get_data(starting_per=1, ending_per=13, feature=feature, band=bands[band])
+        test_x, test_y = get_data(starting_per=13, ending_per=16, feature=feature, band=bands[band])
 
         channels = len(train_x[0])
         sec = len(train_x[0][0])
         train_dataset = EEGDataset(train_x, train_y)
         test_dataset = EEGDataset(test_x, test_y)
 
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size)
         test_loader = DataLoader(test_dataset, batch_size=batch_size)
 
-        ffn = MultiLayerFeedForwardNN(input_dim=channels*sec, output_dim=3, num_hidden_layers=nn_layers, dropout_rate=dropout,
-                                      hidden_dim=hidden_dim)
+        ffn = MultiLayerFeedForwardNN(input_dim=sec, output_dim=3, num_hidden_layers=nn_layers, dropout_rate=dropout,
+                                      hidden_dim=hidden_dim, device=device)
+        ffn.to(device)
 
         criterion = CrossEntropyLoss()
 
-        optimizer = optim.Adam(ffn.parameters(), lr=lr)
+        # optimizer = optim.Adam(ffn.parameters(), lr=lr)
+        optimizer = SGD(ffn.parameters(), lr=lr)
 
         mean_losses = []
         mean_test_losses = []
         for epoch in range(epochs):
-            print("Epoch ", epoch, "..................")
             optimizer.zero_grad()
 
             losses = []
-
+            ffn.train()
             # Train
             for train_batch, train_batch_labels in train_loader:
-                train_batch = train_batch.view(-1, channels*sec).requires_grad_()
+                train_batch, train_batch_labels = train_batch.to(device), train_batch_labels.to(device)
+
+                # train_batch = train_batch.view(-1, channels*sec).requires_grad_()
+                train_batch = torch.mean(train_batch, dim=1, keepdim=False)
+                train_batch.requires_grad_()
                 output = ffn(train_batch)
                 loss = criterion(output, train_batch_labels)
                 losses.append(IntTensor.item(loss))
@@ -237,44 +249,49 @@ def ffn_classification():
 
             mean_losses.append(mean(losses))
 
-            # Calc metrics for test
-            test_losses = []
-            test_pred = []
-            test_labels = []
-            for test_batch, test_batch_labels in test_loader:
+            if (epoch+1) % steps == 0:
+                # Calc metrics for test
+                test_losses = []
+                test_pred = []
+                test_labels = []
+                ffn.eval()
+                with torch.no_grad():
+                    for test_batch, test_batch_labels in test_loader:
+                        test_batch, test_batch_labels = test_batch.to(device), test_batch_labels.to(device)
 
-                test_batch = test_batch.view(-1, channels*sec).requires_grad_()
-                output = ffn(test_batch)
-                test_loss = criterion(output, test_batch_labels)
-                test_losses.append(IntTensor.item(test_loss))
+                        # test_batch = test_batch.view(-1, channels*sec)
+                        test_batch = torch.mean(test_batch, dim=1, keepdim=False)
+                        output = ffn(test_batch)
+                        test_loss = criterion(output, test_batch_labels)
+                        test_losses.append(IntTensor.item(test_loss))
 
-                _, predicted = torch.max(output, 1)
+                        _, predicted = torch.max(output, 1)
 
-                test_labels.extend(test_batch_labels.tolist())
-                test_pred.extend(predicted.tolist())
+                        test_labels.extend(test_batch_labels.tolist())
+                        test_pred.extend(predicted.tolist())
 
-            mean_test_losses.append(mean(test_losses))
+                mean_test_losses.append(mean(test_losses))
 
-            results = metrics.classification_report(test_labels, test_pred, output_dict=True, zero_division=0)
+                results = metrics.classification_report(test_labels, test_pred, output_dict=True, zero_division=0)
 
-            if not best_results:
-                best_results = results
+                if not best_results:
+                    best_results = results
 
-            if results['macro avg']['f1-score'] >= best_results['macro avg']['f1-score']:
-                best_results = results
-                best_results_info = 'feature: ' + feature + ' band: ' + band + ' epoch: ' + str(epoch) + ' lr: ' + str(lr) + ' nn_layers: ' + str(nn_layers) +  ' \n' + pprint.pformat(
-                    results)
+                if results['macro avg']['f1-score'] >= best_results['macro avg']['f1-score']:
+                    best_results = results
+                    best_results_info = f'feature: {feature} band: {band} epoch: {str(epoch)} lr: {str(lr)} nn_layers: {str(nn_layers)}\n {pprint.pformat(results)}'
 
-            print('feature: ' + feature + ' band: ' + band + ' epoch: ' + str(epoch) + ' lr: ' + str(lr) + ' nn_layers: ' + str(nn_layers) + ' \n' + pprint.pformat(results))
+                print(f'Epoch {epoch} ........... Mean Train Loss: {mean(mean_losses)} Mean Test Loss: {mean(mean_test_losses)}')
+                print(pprint.pformat(results))
 
-            if epoch % 1 == 0:
-                plot_loss_epochs(mean_losses, mean_test_losses, epoch)
+        plot_loss_epochs(mean_losses, mean_test_losses, epochs-1, steps)
+    print(best_results_info)
     return best_results
 
 
-def plot_loss_epochs(train_loss, val_loss, epochs):
-    plt.plot(range(1, epochs+2), train_loss, 'g', label='Training loss')
-    plt.plot(range(1, epochs+2), val_loss, 'b', label='validation loss')
+def plot_loss_epochs(train_loss, val_loss, epochs, steps):
+    plt.plot(range(1, epochs + 2), train_loss, 'g', label='Training loss')
+    plt.plot(range(1, epochs + 2, steps), val_loss, 'b', label='validation loss')
     plt.title('Training and Validation loss')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')

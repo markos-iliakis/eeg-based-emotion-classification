@@ -320,6 +320,73 @@ def ffn_classification():
     return best_results
 
 
+class RNN(nn.Module):
+    def __init__(self, cell_type, input_dim, hidden_dim, output_dim, num_layers, seq_length, bidirectional,
+                 dropout_rate):
+        super(RNN, self).__init__()
+
+        cells = {
+            "LSTM": nn.LSTM,
+            "GRU": nn.GRU
+        }
+
+        # Initializations
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+        self.num_layers = num_layers
+        self.seq_length = seq_length
+        self.dropout_rate = dropout_rate
+        self.layer_norm = nn.LayerNorm(input_dim - 1)
+        self.dropout_layer = nn.Dropout(dropout_rate)
+        self.activation = nn.LeakyReLU()
+        self.last_act = nn.Softmax()
+
+        self.cell_type = cell_type
+        self.bidirectional = bidirectional
+
+        self.rnn = cells[cell_type](  # Pick the specific model
+            input_size=input_dim,  # Number of features for each time step
+            hidden_size=hidden_dim,  # Rnn hidden embedding representation
+            num_layers=num_layers,  # Number of layers (if >1 it is a stacked RNN)
+            bidirectional=bidirectional,
+            dropout=dropout_rate,
+            batch_first=True
+        )
+        self.p = self.rnn.named_parameters()
+        if bidirectional:  # we'll have 2 more layers as the output to the final fc (fully connected) layer
+            self.fc_layer = nn.Linear(hidden_dim * 2, output_dim)
+        else:
+            self.fc_layer = nn.Linear(hidden_dim, output_dim)
+
+    def forward(self, x):
+        # if self.input_dim > 1:
+        #     # Normalize only the time features
+        #     x_norm = self.layer_norm(x[:, :, :self.input_dim - 1])
+        #     x = torch.cat((x_norm, torch.unsqueeze(x[:, :, -1], dim=-1)), 2)
+
+        # LSTM cells return also the last cell states
+        if self.cell_type == 'LSTM':
+            r_out, hidden = self.rnn(x)
+        else:
+            r_out, hidden = self.rnn(x)
+
+        # FNN
+        dropout_output = self.dropout_layer(r_out)
+        fc_output = self.fc_layer(dropout_output)
+        fc_output = self.last_act(fc_output)
+
+        return torch.squeeze(fc_output[:, -1, :])
+
+
+def rnn_classification():
+    epochs = 100
+    batch_size = 32
+    nn_layers = 1
+    dropout = 0
+    hidden_dim = 4
+
+
 def plot_loss_epochs(train_loss, val_loss, epochs, steps):
     plt.plot(range(1, epochs + 2), train_loss, 'g', label='Training loss')
     plt.plot(range(1, epochs + 2, steps), val_loss, 'b', label='validation loss')

@@ -63,15 +63,15 @@ def svm_classification():
         for feature in features:
 
             train_x, train_y = get_data(starting_per=1, ending_per=14, feature=feature, band=bands[band])
-            test_x, test_y = get_data(starting_per=14, ending_per=16, feature=feature, band=bands[band])
+            validation_x, validation_y = get_data(starting_per=14, ending_per=16, feature=feature, band=bands[band])
 
             for kernel in kernels:
 
                 clf = svm.TimeSeriesSVC(kernel=kernel)
                 clf.fit(train_x, train_y)
-                pred_y = clf.predict(test_x)
+                pred_y = clf.predict(validation_x)
 
-                results = metrics.classification_report(test_y, pred_y, output_dict=True)
+                results = metrics.classification_report(validation_y, pred_y, output_dict=True)
                 df = pandas.DataFrame(results).transpose()
                 df.to_excel('svm_logs/best_svm_classification_report.xlsx')
                 if not best_results:
@@ -178,7 +178,7 @@ class EEGDataset(Dataset):
 def ffn_classification():
     epochs = 100
     batch_size = 32
-    nn_layers = 8
+    nn_layers = 2
     dropout = 0
     hidden_dim = 4
     lr = 0.01
@@ -208,17 +208,20 @@ def ffn_classification():
     for feature in features:
         print("Feature ", feature, "..............................................")
         train_x, train_y = get_data(starting_per=1, ending_per=13, feature=feature, band=bands[band])
-        test_x, test_y = get_data(starting_per=13, ending_per=16, feature=feature, band=bands[band])
+        validation_x, validation_y = get_data(starting_per=13, ending_per=15, feature=feature, band=bands[band])
+        test_x, test_y = get_data(starting_per=15, ending_per=16, feature=feature, band=bands[band])
 
         channels = len(train_x[0])
         sec = len(train_x[0][0])
         train_dataset = EEGDataset(train_x, train_y)
+        validation_dataset = EEGDataset(validation_x, validation_y)
         test_dataset = EEGDataset(test_x, test_y)
 
         train_loader = DataLoader(train_dataset, batch_size=batch_size)
+        validation_loader = DataLoader(validation_dataset, batch_size=batch_size)
         test_loader = DataLoader(test_dataset, batch_size=batch_size)
 
-        ffn = MultiLayerFeedForwardNN(input_dim=sec, output_dim=3, num_hidden_layers=nn_layers, dropout_rate=dropout,
+        ffn = MultiLayerFeedForwardNN(input_dim=channels*2, output_dim=3, num_hidden_layers=nn_layers, dropout_rate=dropout,
                                       hidden_dim=hidden_dim, device=device)
         ffn.to(device)
 
@@ -228,7 +231,7 @@ def ffn_classification():
         optimizer = SGD(ffn.parameters(), lr=lr)
 
         mean_losses = []
-        mean_test_losses = []
+        mean_validation_losses = []
         for epoch in range(epochs):
             optimizer.zero_grad()
 
@@ -239,7 +242,9 @@ def ffn_classification():
                 train_batch, train_batch_labels = train_batch.to(device), train_batch_labels.to(device)
 
                 # train_batch = train_batch.view(-1, channels*sec).requires_grad_()
-                train_batch = torch.mean(train_batch, dim=1, keepdim=False)
+                # train_batch = torch.mean(train_batch, dim=2, keepdim=False)
+                # train_batch = (torch.stack(torch.std_mean(train_batch, dim=1, keepdim=False), dim=2)).view(-1, sec*2)
+                train_batch = (torch.stack(torch.std_mean(train_batch, dim=2, keepdim=False), dim=2)).view(-1, channels*2)
                 train_batch.requires_grad_()
                 output = ffn(train_batch)
                 loss = criterion(output, train_batch_labels)
@@ -250,41 +255,67 @@ def ffn_classification():
             mean_losses.append(mean(losses))
 
             if (epoch+1) % steps == 0:
-                # Calc metrics for test
-                test_losses = []
-                test_pred = []
-                test_labels = []
+                # Calc metrics for validation
+                validation_losses = []
+                validation_pred = []
+                validation_labels = []
                 ffn.eval()
                 with torch.no_grad():
-                    for test_batch, test_batch_labels in test_loader:
-                        test_batch, test_batch_labels = test_batch.to(device), test_batch_labels.to(device)
+                    for validation_batch, validation_batch_labels in validation_loader:
+                        validation_batch, validation_batch_labels = validation_batch.to(device), validation_batch_labels.to(device)
 
-                        # test_batch = test_batch.view(-1, channels*sec)
-                        test_batch = torch.mean(test_batch, dim=1, keepdim=False)
-                        output = ffn(test_batch)
-                        test_loss = criterion(output, test_batch_labels)
-                        test_losses.append(IntTensor.item(test_loss))
+                        # validation_batch = validation_batch.view(-1, channels*sec)
+                        # validation_batch = torch.mean(validation_batch, dim=1, keepdim=False)
+                        # validation_batch = (torch.stack(torch.std_mean(validation_batch, dim=1, keepdim=False), dim=2)).view(-1, sec*2)
+                        validation_batch = (torch.stack(torch.std_mean(validation_batch, dim=2, keepdim=False), dim=2)).view(-1, channels*2)
+                        output = ffn(validation_batch)
+                        validation_loss = criterion(output, validation_batch_labels)
+                        validation_losses.append(IntTensor.item(validation_loss))
 
                         _, predicted = torch.max(output, 1)
 
-                        test_labels.extend(test_batch_labels.tolist())
-                        test_pred.extend(predicted.tolist())
+                        validation_labels.extend(validation_batch_labels.tolist())
+                        validation_pred.extend(predicted.tolist())
 
-                mean_test_losses.append(mean(test_losses))
+                mean_validation_losses.append(mean(validation_losses))
 
-                results = metrics.classification_report(test_labels, test_pred, output_dict=True, zero_division=0)
+                results = metrics.classification_report(validation_labels, validation_pred, output_dict=True, zero_division=0)
 
                 if not best_results:
                     best_results = results
 
-                if results['macro avg']['f1-score'] >= best_results['macro avg']['f1-score']:
+                if results['accuracy'] >= best_results['accuracy']:
+                    torch.save(ffn, 'best-model.pt')
                     best_results = results
                     best_results_info = f'feature: {feature} band: {band} epoch: {str(epoch)} lr: {str(lr)} nn_layers: {str(nn_layers)}\n {pprint.pformat(results)}'
 
-                print(f'Epoch {epoch} ........... Mean Train Loss: {mean(mean_losses)} Mean Test Loss: {mean(mean_test_losses)}')
+                print(f'Epoch {epoch} ........... Mean Train Loss: {mean(mean_losses)} Mean Test Loss: {mean(mean_validation_losses)}')
                 print(pprint.pformat(results))
 
-        plot_loss_epochs(mean_losses, mean_test_losses, epochs-1, steps)
+        # Test
+        test_labels = []
+        test_pred = []
+        model = torch.load('best-model.pt')
+        with torch.no_grad():
+            for test_batch, test_batch_labels in test_loader:
+                test_batch, test_batch_labels = test_batch.to(device), test_batch_labels.to(
+                    device)
+
+                # test_batch = test_batch.view(-1, channels*sec)
+                # test_batch = torch.mean(test_batch, dim=1, keepdim=False)
+                # test_batch = (torch.stack(torch.std_mean(test_batch, dim=1, keepdim=False), dim=2)).view(-1, sec * 2)
+                test_batch = (torch.stack(torch.std_mean(test_batch, dim=2, keepdim=False), dim=2)).view(-1, channels * 2)
+                output = model(test_batch)
+
+                _, predicted = torch.max(output, 1)
+
+                test_labels.extend(test_batch_labels.tolist())
+                test_pred.extend(predicted.tolist())
+        test_results = metrics.classification_report(test_labels, test_pred, output_dict=True, zero_division=0)
+        print("Test results: ")
+        pprint.pprint(test_results)
+
+        plot_loss_epochs(mean_losses, mean_validation_losses, epochs-1, steps)
     print(best_results_info)
     return best_results
 
